@@ -36,4 +36,18 @@ class MatricesSuite extends FunSuite {
       Matrices.dense(3, 2, Array(0.0, 1.0, 2.0))
     }
   }
+
+  test("symmetric matrix") {
+    //TODO make into real tests
+    val a = Array(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+    val M = new SymmetricMatrix(3, a)
+    for (i <- 0 until 3; j <- 0 until 3) {
+      println(s"M($i, $j)=" + M(i, j))
+    }
+
+    println(M.toArray.foreach(println))
+
+    M(1, 2) = 8.0
+    println(M.toArray.foreach(println))
+  }
 }

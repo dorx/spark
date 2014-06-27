@@ -22,7 +22,8 @@ import org.scalatest.FunSuite
 import breeze.linalg.{DenseVector => BDV, DenseMatrix => BDM, norm => brzNorm, svd => brzSvd}
 
 import org.apache.spark.mllib.util.LocalSparkContext
-import org.apache.spark.mllib.linalg.{Matrices, Vectors, Vector}
+import org.apache.spark.mllib.linalg.{Matrices, Vectors, Vector, SymmetricMatrix}
+import scala.util.Random
 
 class RowMatrixSuite extends FunSuite with LocalSparkContext {
 
@@ -49,11 +50,28 @@ class RowMatrixSuite extends FunSuite with LocalSparkContext {
 
   var denseMat: RowMatrix = _
   var sparseMat: RowMatrix = _
+  var bigMat:  RowMatrix = _
 
   override def beforeAll() {
     super.beforeAll()
     denseMat = new RowMatrix(sc.parallelize(denseData, 2))
     sparseMat = new RowMatrix(sc.parallelize(sparseData, 2))
+    val rng = new Random()
+    val numRows = 1e6.toInt
+    val numCols = 1e6.toInt
+    val mat = new Array[Vector](numRows)
+    for (i <- 0 until numRows) {
+      val vec = new Array[Double](numCols)
+      for (j <- 0 until numCols) {
+        vec(j) = rng.nextInt(Int.MaxValue)
+      }
+      if (i%10000==0) {
+        println("got [" + i + "] rows created.")
+      }
+      mat(i) = Vectors.dense(vec)
+    }
+
+    bigMat = new RowMatrix(sc.parallelize(mat, 10))
   }
 
   test("size") {
@@ -90,6 +108,15 @@ class RowMatrixSuite extends FunSuite with LocalSparkContext {
       Matrices.dense(n, n, Array(126.0, 54.0, 72.0, 54.0, 66.0, 78.0, 72.0, 78.0, 94.0))
     for (mat <- Seq(denseMat, sparseMat)) {
       val G = mat.computeGramianMatrix()
+      assert(G.toBreeze === expected.toBreeze)
+    }
+  }
+
+  test("gramSym") {
+    val expected =
+      Matrices.dense(n, n, Array(126.0, 54.0, 72.0, 54.0, 66.0, 78.0, 72.0, 78.0, 94.0))
+    for (mat <- Seq(denseMat, sparseMat)) {
+      val G = mat.computeGramianMatrixSymmetric()
       assert(G.toBreeze === expected.toBreeze)
     }
   }
@@ -184,5 +211,47 @@ class RowMatrixSuite extends FunSuite with LocalSparkContext {
         assert(summary.min === Vectors.dense(0.0, 0.0, 1.0), "column mismatch.")
       }
     }
+  }
+
+  test("covsym") {
+    for (mat <- Seq(denseMat, sparseMat)) {
+      println("mat = " + mat.toString)
+      val cov = mat.computeCovariance()
+      val covSym = mat.computeCovarianceSymmetric()
+      //cov.toArray.zip(covSym.toArray).foreach(println)
+
+    }
+  }
+
+  test("big matrix cov") {
+    //1,000,000 x 1,000,000,000 input matrix
+    println("Done creating array")
+    val runTimes = new Array[Double](10)
+    for (i <- 0 to 9) {
+      val start = System.nanoTime()
+      val numCols = bigMat.computeCovariance().numCols
+      val finish = System.nanoTime()
+      val runTime = (finish - start)/1e9
+      runTimes(i) = runTime
+      println(runTime)
+    }
+    println(runTimes.toString)
+    println("average: " + runTimes.sum/10.0)
+  }
+
+  test("big matrix cov sym") {
+    //1,000,000 x 1,000,000,000 input matrix
+    println("Done creating array")
+    val runTimes = new Array[Double](10)
+    for (i <- 0 to 9) {
+      val start = System.nanoTime()
+      val numCols = bigMat.computeCovarianceSymmetric().numCols
+      val finish = System.nanoTime()
+      val runTime = (finish - start)/1e9
+      runTimes(i) = runTime
+      println(runTime)
+    }
+    println(runTimes.toString)
+    println("average: " + runTimes.sum/10.0)
   }
 }

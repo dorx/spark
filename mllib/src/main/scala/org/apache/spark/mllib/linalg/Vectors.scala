@@ -65,6 +65,26 @@ trait Vector extends Serializable {
   private[mllib] def apply(i: Int): Double = toBreeze(i)
 }
 
+class ColumnVector(val vector: Vector) extends Serializable{
+  def size: Int = {
+    vector.size
+  }
+
+  def toArray: Array[Double] = {
+    vector.toArray
+  }
+
+  override def equals(other: Any): Boolean = {
+    other match {
+      case v: ColumnVector =>
+        Arrays.equals(this.toArray, v.toArray)
+      case _ => false
+    }
+  }
+
+  override def hashCode(): Int = Arrays.hashCode(this.toArray) ^ -1
+}
+
 /**
  * Factory methods for [[org.apache.spark.mllib.linalg.Vector]].
  * We don't use the name `Vector` because Scala imports

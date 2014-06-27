@@ -39,6 +39,9 @@ trait Matrix extends Serializable {
   /** Gets the (i, j)-th element. */
   private[mllib] def apply(i: Int, j: Int): Double = toBreeze(i, j)
 
+  /** Updates the (i, j)-th element to value v. */
+  private[mllib] def update(i: Int, j: Int, v: Double): Unit = {toBreeze(i, j) = v}
+
   override def toString: String = toBreeze.toString()
 }
 
@@ -64,6 +67,59 @@ class DenseMatrix(val numRows: Int, val numCols: Int, val values: Array[Double])
   override def toArray: Array[Double] = values
 
   private[mllib] override def toBreeze: BM[Double] = new BDM[Double](numRows, numCols, values)
+}
+
+class SymmetricMatrix(val n: Int, val values: Array[Double])
+  extends Matrix {
+
+  require(values.size == (n + 1) * n / 2.0, "Wrong number of entries in array of values.")
+
+  var colCache = 0
+  var rowCache = 0
+  var indexCache = 0
+
+  /** Number of rows. */
+  override def numRows: Int = n
+
+  /** Number of columns. */
+  override def numCols: Int = n
+
+  override def apply(row: Int, col: Int): Double = {
+    if (col < row) {
+      return apply(col, row)
+    }
+    values(linearIndex(row, col))
+  }
+
+  override def update(row: Int, col: Int, v: Double): Unit = {
+    if (col < row) {
+      return update(col, row, v: Double)
+    }
+    values(linearIndex(row, col)) = v
+  }
+
+  // values should be upper triangular
+  def linearIndex(row: Int, col: Int): Int = {
+    if(row < - numRows || row >= numRows) throw new IndexOutOfBoundsException
+    if(col < - numCols || col >= numCols) throw new IndexOutOfBoundsException
+    val trueRow = if(row < 0) row + numRows else row
+    val trueCol = if(col < 0) col + numCols else col
+    if (trueRow == rowCache && trueCol == colCache) {
+      return indexCache
+    }
+
+    val colSkips = (trueCol + 1) * trueCol / 2.0
+    colCache = trueCol
+    rowCache = trueRow
+    indexCache = (colSkips + trueRow).toInt
+    indexCache
+  }
+
+  /** Converts to a dense array in column major. */
+  override def toArray: Array[Double] = Matrices.triuToFull(numCols, values).toArray
+
+  /** Converts to a breeze matrix. */
+  override private[mllib] def toBreeze: BM[Double] = new BDM[Double](numRows, numCols, toArray)
 }
 
 /**
@@ -97,5 +153,32 @@ object Matrices {
         throw new UnsupportedOperationException(
           s"Do not support conversion from type ${breeze.getClass.getName}.")
     }
+  }
+
+  /**
+   * Fills a full square matrix from its upper triangular part.
+   */
+  def triuToFull(n: Int, U: Array[Double]): Matrix = {
+    val G = new BDM[Double](n, n)
+
+    var row = 0
+    var col = 0
+    var idx = 0
+    var value = 0.0
+    while (col < n) {
+      row = 0
+      while (row < col) {
+        value = U(idx)
+        G(row, col) = value
+        G(col, row) = value
+        idx += 1
+        row += 1
+      }
+      G(col, col) = U(idx)
+      idx += 1
+      col +=1
+    }
+
+    dense(n, n, G.data)
   }
 }

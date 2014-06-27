@@ -216,7 +216,26 @@ class RowMatrix(
       combOp = (U1, U2) => U1 += U2
     )
 
-    RowMatrix.triuToFull(n, GU.data)
+    Matrices.triuToFull(n, GU.data)
+  }
+
+  /**
+   * Computes the Gramian matrix `A^T A`.
+   */
+  def computeGramianMatrixSymmetric(): Matrix = {
+    val n = numCols().toInt
+    val nt: Int = n * (n + 1) / 2
+
+    // Compute the upper triangular part of the gram matrix.
+    val GU = rows.aggregate(new BDV[Double](new Array[Double](nt)))(
+      seqOp = (U, v) => {
+        RowMatrix.dspr(1.0, v, U.data)
+        U
+      },
+      combOp = (U1, U2) => U1 += U2
+    )
+
+    new SymmetricMatrix(n, GU.data)
   }
 
   /**
@@ -339,6 +358,47 @@ class RowMatrix(
     }
 
     Matrices.fromBreeze(G)
+  }
+
+  def computeCovarianceSymmetric(): Matrix = {
+    val n = numCols().toInt
+
+    if (n > 10000) {
+      val mem = n * n * java.lang.Double.SIZE / java.lang.Byte.SIZE
+      logWarning(s"The number of columns $n is greater than 10000! " +
+        s"We need at least $mem bytes of memory.")
+    }
+
+    val (m, mean) = rows.aggregate[(Long, BDV[Double])]((0L, BDV.zeros[Double](n)))(
+      seqOp = (s: (Long, BDV[Double]), v: Vector) => (s._1 + 1L, s._2 += v.toBreeze),
+      combOp = (s1: (Long, BDV[Double]), s2: (Long, BDV[Double])) => (s1._1 + s2._1, s1._2 += s2._2)
+    )
+
+    updateNumRows(m)
+
+    mean :/= m.toDouble
+
+    // We use the formula Cov(X, Y) = E[X * Y] - E[X] E[Y], which is not accurate if E[X * Y] is
+    // large but Cov(X, Y) is small, but it is good for sparse computation.
+    // TODO: find a fast and stable way for sparse data.
+
+    val G = computeGramianMatrixSymmetric()
+
+    //loop through the matrix in a column major fashion to take advantage of cache locality
+    var i = 0
+    var j = 0
+    val m1 = m - 1.0
+    var alpha = 0.0
+    while (j < n) {
+      alpha = m / m1 * mean(j)
+      i = j
+      while (i < n) {
+        G(i, j) = G(i, j) / m1 - alpha * mean(i)
+        i += 1
+      }
+      j += 1
+    }
+    G
   }
 
   /**
@@ -466,32 +526,5 @@ object RowMatrix {
           prevCol = col
         }
     }
-  }
-
-  /**
-   * Fills a full square matrix from its upper triangular part.
-   */
-  private def triuToFull(n: Int, U: Array[Double]): Matrix = {
-    val G = new BDM[Double](n, n)
-
-    var row = 0
-    var col = 0
-    var idx = 0
-    var value = 0.0
-    while (col < n) {
-      row = 0
-      while (row < col) {
-        value = U(idx)
-        G(row, col) = value
-        G(col, row) = value
-        idx += 1
-        row += 1
-      }
-      G(col, col) = U(idx)
-      idx += 1
-      col +=1
-    }
-
-    Matrices.dense(n, n, G.data)
   }
 }
