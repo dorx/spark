@@ -223,6 +223,23 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
     self.mapPartitionsWithIndex(samplingFunc, preservesPartitioning=true)
   }
 
+  def sampleByKey2(withReplacement: Boolean,
+                  fractionByKey: Map[K, Double],
+                  seed: Long = Utils.random.nextLong,
+                  exact: Boolean = true): RDD[(K, V)]= {
+    require(fractionByKey.forall({case(k, v) => v >= 0.0}), "Invalid sampling rates.")
+    if (withReplacement) {
+      val counts = if (exact) Some(this.countByKey()) else None
+      val samplingFunc =
+        StratifiedSampler.getPoissonSamplingFunction(self, fractionByKey, exact, counts, seed)
+      self.mapPartitionsWithIndex(samplingFunc, preservesPartitioning = true)
+    } else {
+      val samplingFunc =
+        StratifiedSampler.getBernoulliSamplingFunction2(self, fractionByKey, exact, seed)
+      self.mapPartitionsWithIndex(samplingFunc, preservesPartitioning = true)
+    }
+  }
+
   /**
    * Merge the values for each key using an associative reduce function. This will also perform
    * the merging locally on each mapper before sending results to a reducer, similarly to a

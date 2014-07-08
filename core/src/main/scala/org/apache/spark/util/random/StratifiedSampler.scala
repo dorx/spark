@@ -175,6 +175,79 @@ private[spark] object StratifiedSampler extends Logging {
     thresholdByKey
   }
 
+  def getSeqOp2[K, V](withReplacement: Boolean,
+                      fractionByKey: (K => Double),
+                      rng: RandomDataGenerator,
+                      counts: Option[Map[K, Long]]): (Result[K],(K, V)) => Result[K] = {
+    val delta = 5e-5
+    (U: Result[K], item: (K, V)) => {
+      val result = U
+      // val partitionId = item._1
+      // val rng = result.getRand(partitionId)
+      val fraction = fractionByKey(item._1)
+      val stratum = result.getEntry(item._1)
+      if (withReplacement) {
+        // compute q1 and q2 only if they haven't been computed already
+        // since they don't change from iteration to iteration.
+        // TODO change this to the streaming version
+        if (stratum.areBoundsEmpty) {
+          val n = counts.get(item._1)
+          val sampleSize = math.ceil(n * fraction).toLong
+          val lmbd1 = PoissonBounds.getLowerBound(sampleSize)
+          val minCount = PoissonBounds.getMinCount(lmbd1)
+          val lmbd2 = if (lmbd1 == 0) {
+            PoissonBounds.getUpperBound(sampleSize)
+          } else {
+            PoissonBounds.getUpperBound(sampleSize - minCount)
+          }
+          stratum.acceptBound = lmbd1 / n
+          stratum.waitListBound = lmbd2 / n
+        }
+        val x1 = if (stratum.acceptBound == 0.0) 0L else rng.nextPoisson(stratum.acceptBound)
+        if (x1 > 0) {
+          stratum.incrNumAccepted(x1)
+        }
+        val x2 = rng.nextPoisson(stratum.waitListBound).toInt
+        if (x2 > 0) {
+          stratum.addToWaitList(ArrayBuffer.fill(x2)(rng.nextUniform(0.0, 1.0)))
+        }
+      } else {
+        // We use the streaming version of the algorithm for sampling without replacement.
+        // Hence, q1 and q2 change on every iteration.
+        val g1 = - math.log(delta) / stratum.numItems // gamma1
+        val g2 = (2.0 / 3.0) * g1 // gamma 2
+        stratum.acceptBound = math.max(0, fraction + g2 - math.sqrt((g2 * g2 + 3 * g2 * fraction)))
+        stratum.waitListBound = math.min(1, fraction + g1 + math.sqrt(g1 * g1 + 2 * g1 * fraction))
+
+        val x = rng.nextUniform(0.0, 1.0)
+        if (x < stratum.acceptBound) {
+          stratum.incrNumAccepted()
+        } else if (x < stratum.waitListBound) {
+          stratum.addToWaitList(x)
+        }
+      }
+      stratum.incrNumItems()
+      result
+    }
+  }
+
+  def getFinalResult2[K, V](rdd: RDD[(K,  V)],
+                           fractionByKey: K => Double,
+                           exact: Boolean,
+                           seed: Long): Map[K, Stratum] = {
+    // val f:(Int, Iterator[(K, V)]) => Iterator[(Int, K, V)]  = (part, iter) => iter.map//iter.map({case(k, v) => (part, k, v)})
+
+
+    val combOp = getCombOp[K]
+    val mappedPartitionRDD = rdd.mapPartitionsWithIndex({ case (part, iter) =>
+      val zeroU = new Result[K](new HashMap[K, Stratum](), seed = seed + part)
+      val random = new RandomDataGenerator()
+      random.reSeed(seed + part)
+        Iterator(iter.aggregate(zeroU)(getSeqOp2(false, fractionByKey, random, None), combOp))
+    }, true)
+    mappedPartitionRDD.reduce(combOp).resultMap
+  }
+
   /**
    * Return the per partition sampling function used for sampling without replacement.
    *
@@ -195,6 +268,23 @@ private[spark] object StratifiedSampler extends Logging {
       val zeroU = new Result[K](new HashMap[K, Stratum](), seed = seed)
       val finalResult = aggregateWithContext(zeroU)(rdd, seqOp, combOp).resultMap
       samplingRateByKey = computeThresholdByKey(finalResult, fractions)
+    }
+    (idx: Int, iter: Iterator[(K, V)]) => {
+      val random = new RandomDataGenerator
+      random.reSeed(seed + idx)
+      iter.filter(t => random.nextUniform(0.0, 1.0) < samplingRateByKey(t._1))
+    }
+  }
+
+  def getBernoulliSamplingFunction2[K, V](rdd: RDD[(K,  V)],
+                                         fractionByKey: Map[K, Double],
+                                         exact: Boolean,
+                                         seed: Long): (Int, Iterator[(K, V)]) => Iterator[(K, V)] = {
+    var samplingRateByKey = fractionByKey
+    if (exact) {
+      // determine threshold for each stratum and resample
+      val finalResult = getFinalResult2[K, V](rdd, fractionByKey, exact, seed)
+      samplingRateByKey = StratifiedSampler.computeThresholdByKey(finalResult, fractionByKey)
     }
     (idx: Int, iter: Iterator[(K, V)]) => {
       val random = new RandomDataGenerator
@@ -262,7 +352,7 @@ private[spark] object StratifiedSampler extends Logging {
  * Object used by seqOp to keep track of the number of items accepted and items waitlisted per
  * stratum, as well as the bounds for accepting and waitlisting items.
  */
-private class Stratum(var numItems: Long = 0L, var numAccepted: Long = 0L)
+private[random] class Stratum(var numItems: Long = 0L, var numAccepted: Long = 0L)
   extends Serializable {
 
   private val _waitList = new ArrayBuffer[Double]

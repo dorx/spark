@@ -107,8 +107,36 @@ class PairRDDFunctionsSuite extends FunSuite with SharedSparkContext {
       val expectedSampleSize = stratifiedData.countByKey().mapValues(count =>
         math.ceil(count * samplingRate).toInt)
       val fractions = Map("1" -> samplingRate, "0" -> samplingRate)
+      val start = System.nanoTime()
       val sample = stratifiedData.sampleByKey(false, fractions, exact, seed)
+/*=======
+      val fractionByKey = Map("1" -> samplingRate, "0" -> samplingRate)
+      val start = System.nanoTime()
+      val sample = stratifiedData.sampleByKey(false, fractionByKey, seed, exact)
+>>>>>>> Stashed changes*/
       val sampleCounts = sample.countByKey()
+      val duration = System.nanoTime() - start
+      println("v1: " + duration/1e6)
+      val takeSample = sample.collect()
+      assert(sampleCounts.forall({case(k,v) =>
+        checkSize(exact, false, expectedSampleSize(k), v, samplingRate)}))
+      assert(takeSample.size === takeSample.toSet.size)
+      assert(takeSample.forall(x => 1 <= x._2 && x._2 <= n), s"elements not in [1, $n]")
+    }
+
+    def takeSampleAndValidateBernoulli2(stratifiedData: RDD[(String, Int)],
+                                       exact: Boolean,
+                                       samplingRate: Double,
+                                       seed: Long,
+                                       n: Long) = {
+      val expectedSampleSize = stratifiedData.countByKey().mapValues(count =>
+        math.ceil(count * samplingRate).toInt)
+      val fractionByKey = Map("1" -> samplingRate, "0" -> samplingRate)
+      val start = System.nanoTime()
+      val sample = stratifiedData.sampleByKey2(false, fractionByKey, seed, exact)
+      val sampleCounts = sample.countByKey()
+      val duration = System.nanoTime() - start
+      println("v2: " + duration/1e6)
       val takeSample = sample.collect()
       assert(sampleCounts.forall({case(k,v) =>
         checkSize(exact, false, expectedSampleSize(k), v, samplingRate)}))
@@ -148,17 +176,22 @@ class PairRDDFunctionsSuite extends FunSuite with SharedSparkContext {
 
     def checkAllCombos(stratifiedData: RDD[(String, Int)], samplingRate: Double,
         seed: Long, n: Long) {
+      takeSampleAndValidateBernoulli2(stratifiedData, true, samplingRate, seed, n)
       takeSampleAndValidateBernoulli(stratifiedData, true, samplingRate, seed, n)
-      takeSampleAndValidateBernoulli(stratifiedData, false, samplingRate, seed, n)
-      takeSampleAndValidatePoisson(stratifiedData, true, samplingRate, seed, n)
-      takeSampleAndValidatePoisson(stratifiedData, false, samplingRate, seed, n)
+      takeSampleAndValidateBernoulli2(stratifiedData, true, samplingRate, seed, n)
+      takeSampleAndValidateBernoulli(stratifiedData, true, samplingRate, seed, n)
+
+      //takeSampleAndValidateBernoulli(stratifiedData, false, samplingRate, seed, n)
+      //takeSampleAndValidatePoisson(stratifiedData, true, samplingRate, seed, n)
+      //takeSampleAndValidatePoisson(stratifiedData, false, samplingRate, seed, n)
     }
 
     val defaultSeed = 42L
 
     //vary RDD size
-    for (n <- List(100, 1000, 1000000)) {
-      val data = sc.parallelize(1 to n, 2)
+    for (n <- List(100, 1000, 100000, 1000000, 10000000, 100000000)) {
+      println("n:" + n)
+      val data = sc.parallelize(1 to n)
       val fractionPositive = 0.3
       val stratifiedData = data.keyBy(stratifier(fractionPositive))
 
