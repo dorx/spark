@@ -17,11 +17,12 @@
 
 package org.apache.spark.mllib.stat
 
+import org.apache.spark.rdd.RDD
 import org.scalatest.FunSuite
 
 import breeze.linalg.{DenseMatrix => BDM, Matrix => BM}
 
-import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.linalg.{DenseVector, Vector, Vectors}
 import org.apache.spark.mllib.stat.correlation.{Correlations, PearsonCorrelation,
 SpearmansCorrelation}
 import org.apache.spark.mllib.util.LocalSparkContext
@@ -82,20 +83,11 @@ class CorrelationSuite extends FunSuite with LocalSparkContext {
     val pearson = PearsonCorrelation
     val spearman = SpearmansCorrelation
 
-    // Examples of accepted alternatives for "pearson"
     assert(Correlations.getCorrelationFromName("pearson") === pearson)
-    assert(Correlations.getCorrelationFromName("P") === pearson)
-    assert(Correlations.getCorrelationFromName("PEARSON") === pearson)
-    assert(Correlations.getCorrelationFromName("pearsons") === pearson)
-
-    // Examples of accepted alternatives for "spearman"
     assert(Correlations.getCorrelationFromName("spearman") === spearman)
-    assert(Correlations.getCorrelationFromName("S") === spearman)
-    assert(Correlations.getCorrelationFromName("SPEARMAN") === spearman)
-    assert(Correlations.getCorrelationFromName("spearmans") === spearman)
 
     // Should throw IllegalArgumentException
-    try{
+    try {
       Correlations.getCorrelationFromName("kendall")
       assert(false)
     } catch {
@@ -114,5 +106,22 @@ class CorrelationSuite extends FunSuite with LocalSparkContext {
       }
     }
     true
+  }
+
+  // TODO delete below this line
+  test("corr(X) spearman scaling") {
+    for (col <- List(10, 100, 500, 1000, 10000)) {
+      val X = makeRandomData(10000000, col, 100)
+      X.cache()
+      val start = System.nanoTime()
+      SpearmansCorrelation.computeCorrelationMatrix2(X)
+      println("numCol = " + col + " runtime in s = " + (System.nanoTime() - start)/10e9)
+    }
+  }
+
+  def makeRandomData(numRows: Int, numCol: Int, numPart: Int): RDD[Vector] = {
+    sc.parallelize(0 until numRows, numPart).mapPartitions { iter =>
+      iter.map(t => new DenseVector((0 until numCol).map(i => ((i+t)%5).toDouble).toArray))
+    }
   }
 }

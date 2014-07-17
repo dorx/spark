@@ -41,7 +41,7 @@ object Statistics {
    * Methods currently supported: pearson (default), spearman
    *
    * Note that for Spearman, a rank correlation, we need to create an RDD[Double] for each column
-   * in order to retrieve the ranks.
+   * and sort it in order to retrieve the ranks.
    *
    * @param X an RDD[Vector] for which the correlation matrix is to be computed.
    * @param method String specifying the method to use for computing correlation
