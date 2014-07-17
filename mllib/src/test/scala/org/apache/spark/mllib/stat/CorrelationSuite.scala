@@ -17,7 +17,7 @@
 
 package org.apache.spark.mllib.stat
 
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.{LocalSparkContext, SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
@@ -130,14 +130,17 @@ class CorrelationSuite extends FunSuite with BeforeAndAfterAll{
   def sc: SparkContext = _sc
 
   var conf = new SparkConf(false)
+  conf.set("spark.executor.memory", "16g")
+  conf.setMaster("spark://ec2-54-191-165-255.us-west-2.compute.amazonaws.com:7077")
+  conf.setAppName("testCorr")
 
   override def beforeAll(): Unit = {
-    _sc = new SparkContext("spark://ec2-54-191-165-255.us-west-2.compute.amazonaws.com:7077", "test", conf)
+    _sc = new SparkContext(conf)
     super.beforeAll()
   }
 
   override def afterAll(): Unit = {
-    _sc.stop()
+    LocalSparkContext.stop(_sc)
     _sc = null
     super.afterAll()
   }
