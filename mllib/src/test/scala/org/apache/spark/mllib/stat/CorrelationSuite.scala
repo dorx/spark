@@ -17,17 +17,17 @@
 
 package org.apache.spark.mllib.stat
 
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
 import breeze.linalg.{DenseMatrix => BDM, Matrix => BM}
 
 import org.apache.spark.mllib.linalg.{DenseVector, Vector, Vectors}
 import org.apache.spark.mllib.stat.correlation.{Correlations, PearsonCorrelation,
 SpearmansCorrelation}
-import org.apache.spark.mllib.util.LocalSparkContext
 
-class CorrelationSuite extends FunSuite with LocalSparkContext {
+class CorrelationSuite extends FunSuite with BeforeAndAfterAll{
 
   // test input data
   val xData = Array(1.0, 0.0, -2.0)
@@ -123,5 +123,22 @@ class CorrelationSuite extends FunSuite with LocalSparkContext {
     sc.parallelize(0 until numRows, numPart).mapPartitions { iter =>
       iter.map(t => new DenseVector((0 until numCol).map(i => ((i+t)%5).toDouble).toArray))
     }
+  }
+
+  @transient private var _sc: SparkContext = _
+
+  def sc: SparkContext = _sc
+
+  var conf = new SparkConf(false)
+
+  override def beforeAll(): Unit = {
+    _sc = new SparkContext("spark://ec2-54-191-165-255.us-west-2.compute.amazonaws.com:7077", "test", conf)
+    super.beforeAll()
+  }
+
+  override def afterAll(): Unit = {
+    _sc.stop()
+    _sc = null
+    super.afterAll()
   }
 }
