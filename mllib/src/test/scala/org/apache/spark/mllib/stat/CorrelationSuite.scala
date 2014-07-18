@@ -17,9 +17,13 @@
 
 package org.apache.spark.mllib.stat
 
-import org.apache.spark.{LocalSparkContext, SparkConf, SparkContext}
+import java.io.FileWriter
+
+import org.apache.spark.mllib.util.LocalSparkContext
+import org.scalatest.FunSuite
+
 import org.apache.spark.rdd.RDD
-import org.scalatest.{BeforeAndAfterAll, FunSuite}
+
 
 import breeze.linalg.{DenseMatrix => BDM, Matrix => BM}
 
@@ -27,7 +31,7 @@ import org.apache.spark.mllib.linalg.{DenseVector, Vector, Vectors}
 import org.apache.spark.mllib.stat.correlation.{Correlations, PearsonCorrelation,
 SpearmansCorrelation}
 
-class CorrelationSuite extends FunSuite with BeforeAndAfterAll{
+class CorrelationSuite extends FunSuite with LocalSparkContext{
 
   // test input data
   val xData = Array(1.0, 0.0, -2.0)
@@ -110,12 +114,16 @@ class CorrelationSuite extends FunSuite with BeforeAndAfterAll{
 
   // TODO delete below this line
   test("corr(X) spearman scaling") {
-    for (col <- List(10, 100, 500, 1000, 10000)) {
-      val X = makeRandomData(10000000, col, 100)
+    var fw = new FileWriter("results.txt", true)
+    for (col <- List(2,3,4,5,10, 100, 500, 1000, 5000)) {
+      fw = new FileWriter("results.txt", true)
+      val X = makeRandomData(10000000, col, 40)
       X.cache()
       val start = System.nanoTime()
       SpearmansCorrelation.computeCorrelationMatrix2(X)
-      println("numCol = " + col + " runtime in s = " + (System.nanoTime() - start)/10e9)
+      fw.append("numCol = " + col + ", runtime in s = " + (System.nanoTime() - start)/10e9 + "\n")
+      fw.close()
+      //println("numCol = " + col + " runtime in s = " + (System.nanoTime() - start)/10e9)
     }
   }
 
@@ -123,25 +131,5 @@ class CorrelationSuite extends FunSuite with BeforeAndAfterAll{
     sc.parallelize(0 until numRows, numPart).mapPartitions { iter =>
       iter.map(t => new DenseVector((0 until numCol).map(i => ((i+t)%5).toDouble).toArray))
     }
-  }
-
-  @transient private var _sc: SparkContext = _
-
-  def sc: SparkContext = _sc
-
-  var conf = new SparkConf(false)
-  conf.set("spark.executor.memory", "16g")
-  conf.setMaster("spark://ec2-54-191-165-255.us-west-2.compute.amazonaws.com:7077")
-  conf.setAppName("testCorr")
-
-  override def beforeAll(): Unit = {
-    _sc = new SparkContext(conf)
-    super.beforeAll()
-  }
-
-  override def afterAll(): Unit = {
-    LocalSparkContext.stop(_sc)
-    _sc = null
-    super.afterAll()
   }
 }
