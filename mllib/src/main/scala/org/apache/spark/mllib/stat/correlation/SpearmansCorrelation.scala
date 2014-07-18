@@ -59,7 +59,7 @@ object SpearmansCorrelation extends Correlation {
     for (k <- 0 until numCols) {
       val column = indexed.mapPartitions[(Double, Long)]({ iter =>
         iter.map { case (vector, index) => (vector(k), index) }
-      }, true)
+      })
       ranks(k) = getRanks(column)
     }
 
@@ -79,7 +79,7 @@ object SpearmansCorrelation extends Correlation {
     for (k <- 0 until numCols) {
       val column = indexed.mapPartitions[(Double, Long)]({ iter =>
         iter.map { case (vector, index) => (vector(k), index) }
-      }, true)
+      })
       ranks(k) = getRanks2(column)
     }
 
@@ -146,7 +146,8 @@ object SpearmansCorrelation extends Correlation {
         }
       }
     }
-    ranks.sortByKey()
+    ranks
+    //ranks.sortByKey()
   }
 
   private def makeRankMatrix(ranks: Array[RDD[(Long, Double)]], input: RDD[Vector]): RDD[Vector] = {
@@ -154,6 +155,6 @@ object SpearmansCorrelation extends Correlation {
     val cogrouped = new CoGroupedRDD[Long](ranks, partitioner)
     cogrouped.mapPartitions({ iter =>
       iter.map { case (index, values: Seq[Seq[Double]]) => new DenseVector(values.flatten.toArray)}
-    }, preservesPartitioning = true)
+    })
   }
 }
