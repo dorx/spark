@@ -24,7 +24,6 @@ import org.scalatest.FunSuite
 
 import org.apache.spark.rdd.RDD
 
-
 import breeze.linalg.{DenseMatrix => BDM, Matrix => BM}
 
 import org.apache.spark.mllib.linalg.{DenseVector, Vector, Vectors}
@@ -123,6 +122,7 @@ class CorrelationSuite extends FunSuite with LocalSparkContext{
       SpearmansCorrelation.computeCorrelationMatrix2(X)
       fw.append("numCol = " + col + ", runtime in s = " + (System.nanoTime() - start)/10e9 + "\n")
       fw.close()
+      X.unpersist()
       //println("numCol = " + col + " runtime in s = " + (System.nanoTime() - start)/10e9)
     }
   }
