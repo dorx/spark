@@ -20,6 +20,7 @@ package org.apache.spark.mllib.stat
 import org.apache.spark.annotation.Experimental
 import org.apache.spark.mllib.linalg.{Matrix, Vector}
 import org.apache.spark.mllib.stat.correlation.Correlations
+import org.apache.spark.mllib.stat.test.{ChiSquaredTest, ChiSquaredTestResult}
 import org.apache.spark.rdd.RDD
 
 /**
@@ -89,4 +90,27 @@ object Statistics {
    */
   @Experimental
   def corr(x: RDD[Double], y: RDD[Double], method: String): Double = Correlations.corr(x, y, method)
+
+  // Technically input should be RDD[Long] since the data should be counts
+  @Experimental
+  def chiSquared(x: RDD[Double], y: RDD[Double], method: String): ChiSquaredTestResult = {
+    ChiSquaredTest.chiSquared(x, y, method)
+  }
+
+  @Experimental
+  def chiSquared(expected: RDD[Double], observed: RDD[Double]): ChiSquaredTestResult = {
+    ChiSquaredTest.chiSquared(expected, observed)
+  }
+
+  // Same here. It should be something like RDD[Array[Long]] for counts instead, but I don't know
+  // if we should be consistent about how a "matrix" is presented
+  @Experimental
+  def chiSquared(counts: RDD[Vector], method: String): ChiSquaredTestResult = {
+    ChiSquaredTest.chiSquaredMatrix(counts, method)
+  }
+
+  @Experimental
+  def chiSquared(counts: RDD[Vector]): ChiSquaredTestResult = {
+    ChiSquaredTest.chiSquaredMatrix(counts)
+  }
 }
